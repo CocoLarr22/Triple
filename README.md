@@ -49,12 +49,12 @@ Toutes les données restent sur l'appareil (localStorage, clé `remcox.state.v1`
 
 ## Installer sur iPhone
 
-1. Ouvrir l'adresse GitHub Pages du dépôt dans **Safari**.
+1. Ouvrir **https://cocolarr22.github.io/Triple/** dans **Safari**.
 2. Partager → **Sur l'écran d'accueil**.
 
 ## Mettre à jour
 
-Modifier les fichiers puis incrémenter `VERSION` dans `sw.js` : l'appli propose « Mettre à jour » à la prochaine ouverture.
+Dépôt : github.com/CocoLarr22/Triple, publié par GitHub Pages (branche main, racine). Modifier les fichiers puis incrémenter `VERSION` dans `sw.js` : l'appli propose « Mettre à jour » à la prochaine ouverture.
 
 ## Crédits
 
