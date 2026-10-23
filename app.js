@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   var D = window.RC_DATA, E = window.RC_ENGINE;
-  var APP_VERSION = "0.11.0", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
+  var APP_VERSION = "0.11.1", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
   var SPORT = { natation: "Natation", velo: "Vélo", course: "Course", tri: "Triathlon", padel: "Padel", autre: "Autre" };
   var DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   var DAYS_LONG = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
