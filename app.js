@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   var D = window.RC_DATA, E = window.RC_ENGINE;
-  var APP_VERSION = "0.11.2", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
+  var APP_VERSION = "0.12.0", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
   var SPORT = { natation: "Natation", velo: "Vélo", course: "Course", tri: "Triathlon", padel: "Padel", autre: "Autre" };
   var DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   var DAYS_LONG = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -465,11 +465,14 @@
     return "Intervals.icu a répondu une erreur (" + esc(m) + "). Réessaie dans un moment.";
   }
   function mapAct(a) {
+    var z5;
     return { id: String(a.id), date: String(a.start_date_local || "").slice(0, 10), sport: E.sportOf(a.type), type: a.type || "", name: a.name || "",
       dur: a.moving_time || a.elapsed_time || 0, dist: a.distance || 0, dplus: a.total_elevation_gain || 0, load: a.icu_training_load || 0,
       hr: a.average_heartrate || 0, watts: a.icu_weighted_avg_watts || a.icu_average_watts || 0, kcal: a.calories || 0, src: a.source || "Intervals",
       /* Capteur de puissance : travail mesuré (kJ) et puissance moyenne, seulement si les watts viennent d'un vrai capteur. */
-      kj: a.icu_joules > 0 ? Math.round(a.icu_joules / 1000) : 0, avgW: a.icu_average_watts || 0, pm: !!a.device_watts };
+      kj: a.icu_joules > 0 ? Math.round(a.icu_joules / 1000) : 0, avgW: a.icu_average_watts || 0, pm: !!a.device_watts,
+      /* temps passé dans chaque zone (Z1 à Z5, secondes) et d'où il vient : puissance, FC ou allure */
+      zt: (z5 = E.zones5(a, E.sportOf(a.type))) ? z5.t : null, zs: z5 ? z5.src : null };
   }
   function readZones(list) {
     var z = {};
@@ -508,6 +511,7 @@
           S.wellness[w.id] = { ctl: w.ctl, atl: w.atl, hrv: w.hrv || w.hrvSDNN || 0, rhr: w.restingHR || 0, sleep: w.sleepSecs || 0, weight: w.weight || 0, fat: w.bodyFat || 0 };
         });
         S.icu.stubs = stubs; S.icu.lastSync = new Date().toISOString(); S.icu.error = null;
+        if (oldest <= addDays(t, -180)) S.icu.zonesV = 1;
         dirty(); previews = {}; save();
         return true;
       });
@@ -552,6 +556,8 @@
      si la dernière date de plus de « min » minutes. Elle relit les 10 derniers jours pour attraper les sorties arrivées en retard. */
   function autoSync(min) {
     if (!connected() || syncing) return;
+    /* Temps par zone (v0.12) : on relit une fois les 6 derniers mois pour les sorties déjà importées. */
+    if (!S.icu.zonesV) { syncAndRefresh(true, true).then(function () { if (!S.icu.error) { S.icu.zonesV = 1; save(); render(); } }); return; }
     if (!S.icu.lastSync || Date.now() - new Date(S.icu.lastSync).getTime() > min * 60000) syncAndRefresh(false, true);
   }
 
@@ -1152,8 +1158,8 @@
   /* ================= SUIVI ================= */
   function renderSuivi() {
     var el = $("view-suivi"), html = demoBanner();
-    html += '<div class="seg" role="group" aria-label="Affichage">' + [["forme", "Forme"], ["sorties", "Sorties"], ["poids", "Poids"]].map(function (o) { return '<button data-act="suiviseg" data-v="' + o[0] + '" aria-pressed="' + (suiviSeg === o[0]) + '">' + o[1] + '</button>'; }).join("") + '</div>';
-    if (suiviSeg === "forme") html += formeHTML(); else if (suiviSeg === "sorties") html += sortiesHTML(); else html += poidsHTML();
+    html += '<div class="seg" role="group" aria-label="Affichage">' + [["forme", "Forme"], ["zones", "Zones"], ["sorties", "Sorties"], ["poids", "Poids"]].map(function (o) { return '<button data-act="suiviseg" data-v="' + o[0] + '" aria-pressed="' + (suiviSeg === o[0]) + '">' + o[1] + '</button>'; }).join("") + '</div>';
+    if (suiviSeg === "forme") html += formeHTML(); else if (suiviSeg === "zones") html += zonesHTML(); else if (suiviSeg === "sorties") html += sortiesHTML(); else html += poidsHTML();
     el.innerHTML = html;
     var ch = el.querySelector("[data-chart]"); if (ch) bindChart(ch);
   }
@@ -1259,6 +1265,50 @@
       (recent.length ? recent.map(function (a) {
         return actRow(a, true);
       }).join("") : '<div class="empty">Rien sur les 30 derniers jours.</div>') + '</div></section>';
+    return html;
+  }
+  /* ---- temps par zone ---- */
+  /* Rampe turquoise d'une seule teinte, de sombre (Z1, facile) à clair (Z5, intense) : les zones sont ordonnées. */
+  var ZRAMP = ["#357971", "#2FA094", "#36C6B8", "#67E6D7", "#ADFDF2"];
+  var ZNAME = ["Récupération", "Endurance", "Tempo", "Seuil", "Au-dessus du seuil"];
+  var zoneSport = "", zoneWeek = null;
+  function zonesHTML() {
+    var t = today(), ws0 = mondayOf(t), from4 = addDays(ws0, -21), end = addDays(ws0, 7), sp = zoneSport || null;
+    var html = '<div class="chips" role="group" aria-label="Sport" style="margin:2px 0 12px">' + [["", "Tous"], ["natation", "Natation"], ["velo", "Vélo"], ["course", "Course"]].map(function (o) {
+      return '<button class="chipbtn" data-act="zonesp" data-v="' + o[0] + '" aria-pressed="' + (zoneSport === o[0]) + '">' + o[1] + '</button>'; }).join("") + '</div>';
+    var z = E.zoneTotals(actList(), from4, end, sp);
+    if (!z.tot) return html + '<div class="empty">' + (hasData() ? 'Pas encore de temps par zone sur les 4 dernières semaines. Ils arrivent avec tes sorties Garmin par Intervals.icu (fréquence cardiaque, ou puissance à vélo).' : 'Aucune sortie pour l\'instant.') + '</div>' + (hasData() ? '' : connectCTA());
+    /* 4 dernières semaines : part de chaque zone, et le repère facile / intense */
+    var pct = function (x) { return Math.round(x * 100); };
+    html += '<section class="card"><div class="card-head"><h2>4 dernières semaines</h2><span class="tiny muted">' + hm(z.tot / 60) + ' · ' + z.n + ' sortie' + (z.n > 1 ? 's' : '') + '</span></div>' +
+      '<div class="zbig"><div><span class="bigval num">' + pct(z.easy) + '<small>%</small></span><span class="eyebrow">Facile · Z1-Z2</span></div><div><span class="bigval num">' + pct(z.mod) + '<small>%</small></span><span class="eyebrow">Modéré · Z3</span></div><div><span class="bigval num">' + pct(z.hard) + '<small>%</small></span><span class="eyebrow">Intense · Z4-Z5</span></div></div>' +
+      '<div class="zbar" role="img" aria-label="Répartition du temps par zone">' + z.t.map(function (s, i) { return s ? '<i style="flex:' + s + ';background:' + ZRAMP[i] + '"></i>' : ''; }).join("") + '</div>' +
+      '<div class="zlist">' + z.t.map(function (s, i) { return '<div class="li"><span class="zk" style="background:' + ZRAMP[i] + '"></span><span class="grow"><b>Z' + (i + 1) + '</b> <span class="muted">' + ZNAME[i] + '</span></span><span class="num">' + hm(s / 60) + '</span><span class="num muted zp">' + pct(s / z.tot) + ' %</span></div>'; }).join("") + '</div>' +
+      '<p class="small muted">' + (z.easy >= 0.75 ? 'Bonne base : en endurance, on vise environ 80 % du temps en facile.' : z.easy >= 0.65 ? 'Un peu plus d\'intensité que le repère : en endurance, on vise environ 80 % du temps en facile.' : 'Beaucoup d\'intensité : en endurance, on vise environ 80 % du temps en facile (Z1-Z2).') + '</p></section>';
+    /* 12 semaines : heures par zone, empilées */
+    var weeks = [];
+    for (var i = 11; i >= 0; i--) { var w = addDays(ws0, -7 * i); weeks.push({ ws: w, z: E.zoneTotals(actList(), w, addDays(w, 7), sp) }); }
+    var mx = Math.max(2, Math.max.apply(null, weeks.map(function (w) { return w.z.tot / 3600; }))), W = 340, H = 170, L = 26, B = 20, T = 8, bw = (W - L - 6) / 12, g = "", bars = "";
+    var stepY = mx > 12 ? 4 : mx > 6 ? 2 : 1;
+    for (var v = 0; v <= mx; v += stepY) { var yy = T + (mx - v) / mx * (H - T - B); g += '<line x1="' + L + '" x2="' + W + '" y1="' + yy.toFixed(1) + '" y2="' + yy.toFixed(1) + '" stroke="' + C.line + '"/><text x="' + (L - 5) + '" y="' + (yy + 3).toFixed(1) + '" text-anchor="end">' + v + ' h</text>'; }
+    weeks.forEach(function (w, k) {
+      var x0 = L + k * bw + 3, y = H - B, sel = zoneWeek === w.ws;
+      var seg = "";
+      w.z.t.forEach(function (s, i) {
+        var hh = s / 3600 / mx * (H - T - B); if (hh < 0.5) return;
+        seg += '<rect x="' + x0.toFixed(1) + '" y="' + (y - hh + 1).toFixed(1) + '" width="' + (bw - 6).toFixed(1) + '" height="' + Math.max(1, hh - 2).toFixed(1) + '" rx="2" fill="' + ZRAMP[i] + '"/>';
+        y -= hh;
+      });
+      bars += '<g class="zwk" data-act="zoneweek" data-w="' + w.ws + '"' + (zoneWeek && !sel ? ' opacity=".45"' : '') + '><rect x="' + (x0 - 3).toFixed(1) + '" y="' + T + '" width="' + bw.toFixed(1) + '" height="' + (H - T - B + 4) + '" fill="transparent"/>' + seg + '</g>';
+      if (k % 3 === 2 || k === 11) bars += '<text x="' + (x0 + (bw - 6) / 2).toFixed(1) + '" y="' + (H - 5) + '" text-anchor="middle">' + short(w.ws) + '</text>';
+    });
+    var sw = weeks.filter(function (w) { return w.ws === zoneWeek; })[0];
+    html += '<section class="card"><div class="card-head"><h2>Semaine par semaine</h2><span class="tiny muted">touche une semaine</span></div>' +
+      '<div class="chart"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Heures par zone sur 12 semaines">' + g + bars + '</svg></div>' +
+      '<div class="legend">' + ZRAMP.map(function (c, i) { return '<span style="--sc:' + c + '">Z' + (i + 1) + '</span>'; }).join("") + '</div>' +
+      (sw ? '<p class="small num" style="margin-top:8px"><b>Semaine du ' + short(sw.ws) + '</b> · ' + (sw.z.tot ? sw.z.t.map(function (s, i) { return s ? 'Z' + (i + 1) + ' ' + hm(s / 60) : ''; }).filter(Boolean).join(' · ') + ' · ' + pct(sw.z.easy) + ' % facile' : 'pas de temps par zone') + '</p>' : '') + '</section>';
+    var srcs = {}; actList().forEach(function (a) { if (a.zs && a.date >= from4) srcs[a.zs] = true; });
+    html += '<p class="tiny muted" style="margin:0 4px 16px">Zones de ' + (srcs.power ? 'puissance à vélo quand ton capteur les donne, sinon ' : '') + 'fréquence cardiaque' + (srcs.pace ? ' ou d\'allure' : '') + ', telles que réglées dans Intervals.icu. Les zones au-delà de la 5e comptent en Z5.' + (z.miss ? ' ' + z.miss + ' sortie' + (z.miss > 1 ? 's' : '') + ' sans données de zones (ajoutée' + (z.miss > 1 ? 's' : '') + ' à la main ou sans cardio).' : '') + '</p>';
     return html;
   }
   function actRow(a, del) {
@@ -1640,6 +1690,8 @@
     },
     suiviseg: function (b) { suiviSeg = b.dataset.v; render(); },
     allacts: function () { suiviSeg = "sorties"; show("suivi"); },
+    zonesp: function (b) { zoneSport = b.dataset.v; zoneWeek = null; render(); },
+    zoneweek: function (b) { zoneWeek = zoneWeek === b.dataset.w ? null : b.dataset.w; render(); },
     layout: function (b) { layoutSheet(b.dataset.v); },
     addact: function () { manualActSheet(); },
     delact: function (b) { delete S.acts[b.dataset.id]; dirty(); save(); render(); toast("Sortie supprimée"); },

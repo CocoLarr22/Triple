@@ -74,6 +74,41 @@
       run: h.course / wk, longRun: longRun, longRide: longRide };
   }
 
+  /* ================= temps passé par zone (sorties réelles) ================= */
+  /* Ramène les temps par zone d'une activité Intervals.icu à 5 zones (secondes) : les zones au-delà de la 5e (5a, 5b, 5c,
+     ou Z6-Z7 en puissance) comptent en Z5. Vélo : zones de puissance si un capteur les donne ; sinon zones de FC ;
+     en dernier recours zones d'allure. Renvoie { t: [z1..z5], src: "power" | "hr" | "pace" } ou null. */
+  function zones5(a, sport) {
+    function fold(arr) {
+      if (!Array.isArray(arr) || !arr.length) return null;
+      var t = [0, 0, 0, 0, 0]; arr.forEach(function (x, i) { t[Math.min(i, 4)] += Math.max(0, +x || 0); });
+      return sum(t) > 0 ? t : null;
+    }
+    var pw = null;
+    if (Array.isArray(a.icu_zone_times)) {
+      var m = {}; a.icu_zone_times.forEach(function (z) { if (z && /^Z\d$/.test(z.id)) m[z.id] = z.secs || 0; });
+      pw = fold(["Z1", "Z2", "Z3", "Z4", "Z5", "Z6", "Z7"].map(function (k) { return m[k] || 0; }));
+    }
+    var hr = fold(a.icu_hr_zone_times), pace = fold(a.pace_zone_times);
+    if (sport === "velo" && pw) return { t: pw, src: "power" };
+    if (hr) return { t: hr, src: "hr" };
+    if (pw) return { t: pw, src: "power" };
+    if (pace) return { t: pace, src: "pace" };
+    return null;
+  }
+  /* Somme des temps par zone sur une période, par sport ou tous sports. acts : sorties stockées (zt en secondes). */
+  function zoneTotals(acts, from, to, sport) {
+    var t = [0, 0, 0, 0, 0], n = 0, miss = 0;
+    (acts || []).forEach(function (a) {
+      if (a.date < from || a.date >= to || a.sport === "autre") return;
+      if (sport && a.sport !== sport) return;
+      if (!a.zt) { if (a.dur > 600) miss++; return; }
+      n++; for (var i = 0; i < 5; i++) t[i] += a.zt[i] || 0;
+    });
+    var tot = sum(t);
+    return { t: t, tot: tot, n: n, miss: miss, easy: tot ? (t[0] + t[1]) / tot : 0, mod: tot ? t[2] / tot : 0, hard: tot ? (t[3] + t[4]) / tot : 0 };
+  }
+
   /* ================= zones & bibliothèque de séances ================= */
   var ZONES = {
     Z1: { lab: "Z1 · récupération", short: "récup", IF: 0.55 },
@@ -1013,7 +1048,7 @@
 
   root.RC_ENGINE = {
     iso: iso, parseISO: parseISO, addDays: addDays, mondayOf: mondayOf, daysBetween: daysBetween, clamp: clamp, sum: sum, pad: pad,
-    SPORTS: SPORTS, RUN: RUN, sportOf: sportOf, ZONES: ZONES, THEMES: THEMES, FACT: FACT, DAYTYPE: DAYTYPE, KEYS: KEYS,
+    SPORTS: SPORTS, RUN: RUN, sportOf: sportOf, zones5: zones5, zoneTotals: zoneTotals, ZONES: ZONES, THEMES: THEMES, FACT: FACT, DAYTYPE: DAYTYPE, KEYS: KEYS,
     loadsByDay: loadsByDay, fitnessSeries: fitnessSeries, formZone: formZone, history: history,
     generateWeek: generateWeek, brickSession: brickSession, padelSession: padelSession, PHASES: PHASES, phaseOf: phaseOf, RACE_TYPES: RACE_TYPES, raceInfo: raceInfo, racePlan: racePlan, raceSession: raceSession, phaseEnd: phaseEnd, seasonPos: seasonPos, REPRISE_WEEKS: REPRISE_WEEKS, themeOf: themeOf, lighten: lighten, sessionMinutes: sessionMinutes, sessionLoad: sessionLoad,
     icuText: icuText, targetLabel: targetLabel, stepView: stepView, paceLabel: paceLabel, durLabel: durLabel, readiness: readiness,

@@ -358,3 +358,14 @@ details.fold[open] summary::after{transform:rotate(-135deg)}
 .brandmark .sp b:nth-child(3){width:32px}
 .brandmark .w{display:inline-block;transform:skewX(-9deg);letter-spacing:.03em}
 .brandmark em{font-style:normal;color:var(--acc)}
+
+/* ---------- temps par zone ---------- */
+.zbig{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 12px}
+.zbig>div{display:flex;flex-direction:column;gap:2px}
+.zbig .bigval{font-size:34px}
+.zbar{display:flex;gap:2px;height:14px;margin:0 0 10px}
+.zbar i{display:block;min-width:2px;border-radius:4px}
+.zlist .li{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+.zlist .zk{width:12px;height:12px;border-radius:3px;flex:none}
+.zlist .zp{width:44px;text-align:right}
+.zwk{cursor:pointer}
