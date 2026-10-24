@@ -34,7 +34,7 @@ La clé reste sur le téléphone et n'est jamais incluse dans les sauvegardes ex
 
 Logo de la barre du haut : trois traits de vitesse turquoise et « TRIPLE » en italique, « TRI » en turquoise (classe `.brandmark` dans `styles.css`).
 
-Couleurs : Gunmetal `#292F36`, Medium Turquoise `#4ECDC4`, Mint Cream `#F7FFF7` (en haut de `styles.css`). Sports : natation `#3D8BDB` (bleu), vélo `#CCFF00` (jaune fluo), course `#6CCB5F` (vert clair), padel `#B026FF` (violet fluo) ; alerte `#F7A541` (orange, pour rester distincte du jaune du vélo). Couleurs vérifiées entre elles, y compris pour les daltoniens, et toujours accompagnées du nom du sport. Logo : le pic du Midi d'Ossau enneigé (turquoise, deux montagnes grises derrière), avec un élément par sport : un pignon de cassette (couronne fine, centre rond ouvert) en guise de soleil, un sentier de course en lacets qui monte en diagonale sur l'Ossau, et le lac au pied pour la natation (`icons/icon.svg`).
+Couleurs : Gunmetal `#292F36`, Medium Turquoise `#4ECDC4`, Mint Cream `#F7FFF7` (en haut de `styles.css`). Sports : natation `#3D8BDB` (bleu), vélo `#CCFF00` (jaune fluo), course `#FF6A13` (orange fluo), padel `#B026FF` (violet fluo) ; alerte `#F4C152` (jaune ambré). Le nom du sport accompagne toujours la couleur. Logo : le pic du Midi d'Ossau enneigé (turquoise, deux montagnes grises derrière), avec un élément par sport : un pignon de cassette (couronne fine, centre rond ouvert) en guise de soleil, un sentier de course en lacets qui monte en diagonale sur l'Ossau, et le lac au pied pour la natation (`icons/icon.svg`).
 
 Toutes les données restent sur l'appareil (localStorage, clé `remcox.state.v1` gardée depuis l'ancien nom pour ne rien perdre). Réglages → Exporter une sauvegarde pour les conserver.
 

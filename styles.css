@@ -7,8 +7,8 @@
   --bg:#292F36; --deep:#22272D; --surface:#313840; --surface2:#3A424B; --line:#444C56; --line2:#56606B;
   --ink:#F7FFF7; --muted:#A3B1AE; --faint:#707C7E;
   --acc:#4ECDC4; --acc-ink:#292F36; --acc-soft:rgba(78,205,196,.16); --acc-deep:#2E6F6B; --acc-text:#7EDCD5;
-  --natation:#3D8BDB; --velo:#CCFF00; --course:#6CCB5F; --padel:#B026FF;
-  --good:#4ECDC4; --good-soft:rgba(78,205,196,.16); --warn:#F7A541; --warn-soft:rgba(247,165,65,.16); --bad:#FF7B72; --bad-soft:rgba(255,123,114,.16);
+  --natation:#3D8BDB; --velo:#CCFF00; --course:#FF6A13; --padel:#B026FF;
+  --good:#4ECDC4; --good-soft:rgba(78,205,196,.16); --warn:#F4C152; --warn-soft:rgba(244,193,82,.16); --bad:#FF7B72; --bad-soft:rgba(255,123,114,.16);
   --display:"Barlow Condensed","Arial Narrow",-apple-system,sans-serif;
   --body:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
