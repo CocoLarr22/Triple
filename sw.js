@@ -1,5 +1,5 @@
 /* Service worker : l'app s'ouvre même sans réseau. Les appels à Intervals.icu passent toujours par le réseau. */
-var VERSION = "triple-v20";
+var VERSION = "triple-v21";
 var SHELL = [
   "./", "index.html", "styles.css", "data.js", "engine.js", "demo.js", "app.js", "manifest.webmanifest",
   "fonts/barlow-condensed-latin-600-normal.woff2", "fonts/barlow-condensed-latin-700-normal.woff2",

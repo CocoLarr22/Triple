@@ -20,8 +20,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body)
 body{min-height:100vh;overscroll-behavior-y:none}
 [hidden]{display:none!important}
 button{font:inherit;color:inherit}
-/* Pas de zoom au double tap (le pincement pour zoomer reste possible). */
-html,body,button,a,input,label,select,textarea,summary,[role=button]{touch-action:manipulation}
+/* Pas de zoom au double tap, sur tous les éléments (iPhone). */
+*{touch-action:manipulation}
 input,select,textarea{font:inherit;color:var(--ink)}
 input[type=number],input[type=date],input[type=text],input[type=search],input[type=password],input[type=time]{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;width:100%;min-width:0}
 input:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}

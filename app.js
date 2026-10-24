@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   var D = window.RC_DATA, E = window.RC_ENGINE;
-  var APP_VERSION = "0.11.1", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
+  var APP_VERSION = "0.11.2", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
   var SPORT = { natation: "Natation", velo: "Vélo", course: "Course", tri: "Triathlon", padel: "Padel", autre: "Autre" };
   var DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   var DAYS_LONG = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -1886,6 +1886,16 @@
     }, null, true);
   }
 
+  /* ================= pas de zoom ================= */
+  /* Comme une appli : ni zoom au double tap, ni zoom en pinçant. Les taps rapides sur les boutons (+, −…) passent toujours. */
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+  var lastTouchEnd = 0;
+  document.addEventListener("touchend", function (e) {
+    var now = Date.now();
+    if (now - lastTouchEnd < 350 && !(e.target.closest && e.target.closest("button,a,input,select,textarea,label,summary,[data-act],[role=button],.grip"))) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+
   /* ================= démarrage ================= */
   rebuildRecipes();
   if (S.reloadDemo) { delete S.reloadDemo; clearDemo(); loadDemo(); }
@@ -1907,7 +1917,11 @@
 
   if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
     navigator.serviceWorker.register("sw.js").then(function (reg) {
-      function ready(w) { $("update-banner").hidden = false; $("update-btn").onclick = function () { w.postMessage("skipWaiting"); }; }
+      /* Nouvelle version prête : elle s'installe toute seule, sauf si une fenêtre est ouverte (on ne coupe pas une saisie) : alors le bandeau la propose. */
+      function ready(w) {
+        if (!document.querySelector("#sheet-root .scrim")) { w.postMessage("skipWaiting"); return; }
+        $("update-banner").hidden = false; $("update-btn").onclick = function () { w.postMessage("skipWaiting"); };
+      }
       if (reg.waiting && navigator.serviceWorker.controller) ready(reg.waiting);
       reg.addEventListener("updatefound", function () { var w = reg.installing; if (!w) return; w.addEventListener("statechange", function () { if (w.state === "installed" && navigator.serviceWorker.controller) ready(w); }); });
       document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") reg.update().catch(function () {}); });
