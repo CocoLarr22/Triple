@@ -369,3 +369,13 @@ details.fold[open] summary::after{transform:rotate(-135deg)}
 .zlist .zk{width:12px;height:12px;border-radius:3px;flex:none}
 .zlist .zp{width:44px;text-align:right}
 .zwk{cursor:pointer}
+
+/* ---------- repos et vacances ---------- */
+.periods{display:flex;flex-direction:column;gap:8px;margin:4px 0 12px}
+.period-row{appearance:none;display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 12px;border-radius:12px;background:var(--surface2);border:0;border-left:4px solid var(--acc);cursor:pointer}
+.period-row.repos{border-left-color:var(--muted)}
+.period-row .grow{display:flex;flex-direction:column;gap:2px;min-width:0}
+.period-row .nm{font-weight:650;font-size:14.5px;display:flex;align-items:center;gap:8px}
+.period-row .chip{font-size:11px;padding:2px 7px}
+.period-row .chev{color:var(--faint);font-size:20px;line-height:1}
+.sess.rest.pause{color:var(--acc-text);font-weight:600}

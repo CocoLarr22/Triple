@@ -510,7 +510,50 @@
      l'épaule a déjà travaillé). Il compte comme un jour dur : pas de séance clé ce jour-là, ni la veille ou le lendemain si possible, pas de séance clé
      ni de sortie longue en course à pied le lendemain. La semaine de triathlon baisse de la moitié de sa durée (15 % au plus) pour garder la même fatigue.
      Pas de padel en blessure, en reprise, en semaine de course ni le jour ou la veille d'une course de préparation (res.padelOff). */
+  /* Repos et vacances : une pause dans le plan, pas une blessure. periods : [{ kind: "repos" | "vacances", from, to, sports }] (dates incluses).
+     Les séances de ces jours-là sont mises de côté (res.paused), sauf une course et le padel que tu as ajouté. Le reste de la semaine ne bouge pas,
+     et le plan reprend ensuite là où il en est : mêmes cycles, mêmes phases, même préparation des objectifs.
+     En vacances, pour les sports cochés : une séance d'entretien facile un jour sur deux, sans obligation.
+     o : { today (les séances déjà envoyées à partir de ce jour sont à retirer d'Intervals), css, sports }. Rejouable : on annule d'abord
+     l'application précédente. Renvoie les identifiants Intervals des séances à retirer du calendrier. */
+  var PERIOD_LABEL = { repos: "Repos", vacances: "Vacances" };
+  var KEEP_MIN = { course: 40, velo: 60, natation: 30 };
+  function periodOn(periods, date) { return (periods || []).filter(function (p) { return p && p.from && p.to && p.from <= date && date <= p.to; })[0] || null; }
+  function applyPeriods(res, periods, o) {
+    o = o || {};
+    var t = o.today || res.ws, drop = [];
+    res.sessions = res.sessions.filter(function (s) { if (!s.period) return true; if (s.icuId && s.date >= t) drop.push(s.icuId); return false; });
+    res.sessions = res.sessions.concat(res.paused || []);
+    var off = {}, n = 0;
+    for (var d = 0; d < 7; d++) { var date = addDays(res.ws, d), p = periodOn(periods, date); if (p) { off[date] = p; n++; } }
+    res.paused = [];
+    res.sessions = res.sessions.filter(function (s) {
+      if (!off[s.date] || s.race || s.extra) return true;
+      if (s.icuId && s.date >= t) { drop.push(s.icuId); delete s.icuId; s.pushed = false; }
+      res.paused.push(s); return false;
+    });
+    var sp = o.sports || {}, k = 0;
+    Object.keys(off).sort().forEach(function (date) {
+      var p = off[date], on = p.kind === "vacances" ? SPORTS.filter(function (x) { return p.sports && p.sports[x] && sp[x] !== false; }) : [];
+      if (!on.length || daysBetween(p.from, date) % 2 || res.sessions.some(function (x) { return x.date === date; })) return;
+      var spt = on[k++ % on.length], s = easySession("endu", spt, KEEP_MIN[spt], o.css);
+      s.title = "Entretien"; s.sub = (spt === "natation" ? "technique" : "Z2") + " · facultative";
+      s.note = "Vacances : une séance facile pour garder le rythme, sans obligation. Si tu n'en as pas envie, saute-la, le plan reprend normalement au retour.";
+      s.date = date; s.slot = 0; s.period = true; s.dur = Math.round(sessionMinutes(s)); s.load = sessionLoad(s);
+      res.sessions.push(s);
+    });
+    res.sessions.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.slot || 0) - (b.slot || 0); });
+    res.off = {}; Object.keys(off).forEach(function (k2) { res.off[k2] = off[k2].kind; });
+    res.offDays = n;
+    if (!n) { delete res.off; delete res.offDays; if (!res.paused.length) delete res.paused; }
+    return drop;
+  }
   function generateWeek(ctx) {
+    var res = generateWeekCore(ctx);
+    if (ctx.periods && ctx.periods.length) applyPeriods(res, ctx.periods, { css: ctx.css, sports: ctx.sports });
+    return res;
+  }
+  function generateWeekCore(ctx) {
     var pdl = ctx.padel && ctx.padel.dur > 0 && ctx.padel.day >= 0 && ctx.padel.day <= 6 ? ctx.padel : null;
     if (ctx.injury && (ctx.injury.mode === "blesse" || ctx.injury.mode === "reprise")) { var ri = generateInjury(ctx); if (pdl) ri.padelOff = "injury"; return ri; }
     var rp = racePlan(ctx);
@@ -554,7 +597,7 @@
     var lw = ctx.lastWeek, adjusted = false;
     if (!rec && lw && lw.plannedMin > 0 && lw.doneMin < lw.plannedMin * 0.8) {
       var cap = Math.max(lw.doneMin / 60 * 1.15, base * 0.9);
-      if (cap < target) { target = cap; adjusted = true; }
+      if (cap < target) { target = cap; adjusted = lw.pause ? "pause" : true; }
     }
     target = Math.min(A, Math.max(target, Math.min(A, 1.5)));
     var tMin = target * 60;
@@ -1050,7 +1093,7 @@
     iso: iso, parseISO: parseISO, addDays: addDays, mondayOf: mondayOf, daysBetween: daysBetween, clamp: clamp, sum: sum, pad: pad,
     SPORTS: SPORTS, RUN: RUN, sportOf: sportOf, zones5: zones5, zoneTotals: zoneTotals, ZONES: ZONES, THEMES: THEMES, FACT: FACT, DAYTYPE: DAYTYPE, KEYS: KEYS,
     loadsByDay: loadsByDay, fitnessSeries: fitnessSeries, formZone: formZone, history: history,
-    generateWeek: generateWeek, brickSession: brickSession, padelSession: padelSession, PHASES: PHASES, phaseOf: phaseOf, RACE_TYPES: RACE_TYPES, raceInfo: raceInfo, racePlan: racePlan, raceSession: raceSession, phaseEnd: phaseEnd, seasonPos: seasonPos, REPRISE_WEEKS: REPRISE_WEEKS, themeOf: themeOf, lighten: lighten, sessionMinutes: sessionMinutes, sessionLoad: sessionLoad,
+    generateWeek: generateWeek, brickSession: brickSession, padelSession: padelSession, PHASES: PHASES, phaseOf: phaseOf, RACE_TYPES: RACE_TYPES, raceInfo: raceInfo, racePlan: racePlan, raceSession: raceSession, phaseEnd: phaseEnd, seasonPos: seasonPos, REPRISE_WEEKS: REPRISE_WEEKS, applyPeriods: applyPeriods, periodOn: periodOn, PERIOD_LABEL: PERIOD_LABEL, themeOf: themeOf, lighten: lighten, sessionMinutes: sessionMinutes, sessionLoad: sessionLoad,
     icuText: icuText, targetLabel: targetLabel, stepView: stepView, paceLabel: paceLabel, durLabel: durLabel, readiness: readiness,
     bmr: bmr, sessionKcal: sessionKcal, kcalInfo: kcalInfo, kcalRates: kcalRates, dayType: dayType, ravito: ravito, dayNeeds: dayNeeds, logTotals: logTotals, mealTargets: mealTargets, scaleFactors: scaleFactors, factorFor: factorFor
   };

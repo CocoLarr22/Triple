@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   var D = window.RC_DATA, E = window.RC_ENGINE;
-  var APP_VERSION = "0.12.0", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
+  var APP_VERSION = "0.13.0", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
   var SPORT = { natation: "Natation", velo: "Vélo", course: "Course", tri: "Triathlon", padel: "Padel", autre: "Autre" };
   var DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   var DAYS_LONG = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -14,6 +14,7 @@
   function today() { return iso(new Date()); }
   function dow(d) { return (parseISO(d).getDay() + 6) % 7; }
   function short(s) { var p = s.split("-"); return p[2] + "/" + p[1]; }
+  function dShort(s) { return parseISO(s).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" }); }
   function longDate(s) { return parseISO(s).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }); }
   function fmt(n, d) { if (n == null || isNaN(n)) return "—"; return n.toFixed(d == null ? 1 : d).replace(".", ","); }
   function euro(n) { return fmt(n, 2) + " €"; }
@@ -42,7 +43,9 @@
       v: 2, profile: null,
       train: { sports: { natation: true, velo: true, course: true }, prio: "equilibre", avail: [45, 75, 60, 75, 0, 180, 120], planStart: null, bikeTarget: "auto",
         bricks: true, trail: "non", doubles: false, bikeWE: false, padel: {},
-        injury: { mode: "none", sports: { natation: true, velo: true, course: false }, rsports: { natation: true, velo: true, course: true }, start: null, until: null } },
+        injury: { mode: "none", sports: { natation: true, velo: true, course: false }, rsports: { natation: true, velo: true, course: true }, start: null, until: null },
+        /* Repos et vacances : [{ id, kind: "repos" | "vacances", from, to, sports }] */
+        periods: [] },
       races: [],
       prefs: { food: {}, recipes: {} },
       settings: { store: "lidl", mealHours: [10, 14, 18], lastExport: null, autoPush: true, airfryer: "" },
@@ -70,6 +73,7 @@
     /* Padel : sorties importées avant que l'appli le reconnaisse (et ancien réglage « paddle »). */
     if (s.train.paddle) { if (!s.train.padel || !Object.keys(s.train.padel).length) s.train.padel = s.train.paddle; delete s.train.paddle; }
     if (!s.train.padel) s.train.padel = {};
+    if (!Array.isArray(s.train.periods)) s.train.periods = [];
     Object.keys(s.acts).forEach(function (k) { var a = s.acts[k]; if ((a.sport === "autre" || a.sport === "paddle") && a.type) a.sport = E.sportOf(a.type); });
     return s;
   }
@@ -86,6 +90,7 @@
     Object.keys(S.plans).forEach(function (k) { if (k < addDays(ws, -7 * 20)) delete S.plans[k]; });
     Object.keys(S.shop).forEach(function (k) { if (k < addDays(ws, -14)) delete S.shop[k]; });
     Object.keys(S.train.padel || {}).forEach(function (k) { if (k < addDays(ws, -7 * 20)) delete S.train.padel[k]; });
+    S.train.periods = S.train.periods.filter(function (p) { return p.to >= addDays(ws, -7 * 20); });
     var mk = Object.keys(S.mealPlan).sort(); mk.slice(0, Math.max(0, mk.length - 8)).forEach(function (k) { delete S.mealPlan[k]; });
   }
 
@@ -111,7 +116,8 @@
   /* Identifiant des séances dans Intervals.icu : garde l'ancien préfixe pour retrouver les séances déjà envoyées. */
   function eidOf(s) { return "remcox-" + s.date + "-" + s.sport + (s.brick ? "-enchaine" : ""); }
   /* Le padel est en plus : il ne compte ni dans le prévu ni dans le suivi du plan (régularité, progression). */
-  function plannedMin(p) { return sum(p.sessions.filter(function (s) { return !s.skip && !s.extra; }).map(function (s) { return s.dur; })); }
+  /* Les séances d'entretien des vacances sont facultatives : elles ne comptent pas non plus. */
+  function plannedMin(p) { return sum(p.sessions.filter(function (s) { return !s.skip && !s.extra && !s.period; }).map(function (s) { return s.dur; })); }
   function doneMinWeek(ws) {
     var end = addDays(ws, 7);
     return sum(actList().filter(function (a) { return a.date >= ws && a.date < end && a.sport !== "autre" && a.sport !== "padel"; }).map(function (a) { return a.dur / 60; }));
@@ -123,14 +129,19 @@
     for (var i = 0; i < 4; i++) { var w = addDays(cs, 7 * i), p = S.plans[w]; if (!p) continue; pl += plannedMin(p); dn += doneMinWeek(w); }
     return { base: p0.base, runBase: p0.runBase, compliance: pl ? dn / pl : 1 };
   }
-  function lastWeekInfo(ws) { var p = S.plans[addDays(ws, -7)]; return p ? { plannedMin: plannedMin(p), doneMin: doneMinWeek(addDays(ws, -7)) } : null; }
+  /* Après une semaine de pause (5 jours ou plus), on compare à la semaine prévue au départ : la reprise repart un peu plus bas. */
+  function lastWeekInfo(ws) {
+    var p = S.plans[addDays(ws, -7)]; if (!p) return null;
+    var pause = (p.offDays || 0) >= 5, pm = plannedMin(p) + (pause ? sum((p.paused || []).filter(function (s) { return !s.extra; }).map(function (s) { return s.dur; })) : 0);
+    return { plannedMin: pm, doneMin: doneMinWeek(addDays(ws, -7)), pause: pause };
+  }
   function buildPlan(ws) {
     var p = E.generateWeek({ ws: ws, avail: S.train.avail, prio: S.train.prio, sports: S.train.sports, acts: actList(),
       planStart: S.train.planStart || mondayOf(today()), fallbackHours: (S.profile && S.profile.curHours) || 5, css: zones().css || 120,
       doubles: !!S.train.doubles, bricks: S.train.bricks !== false, trail: S.train.trail || "non", bikeWE: !!S.train.bikeWE, injury: injuryFor(ws), races: S.races,
-      padel: (S.train.padel || {})[ws] || null,
+      padel: (S.train.padel || {})[ws] || null, periods: S.train.periods,
       prevCycle: prevCycleInfo(ws), lastWeek: lastWeekInfo(ws) });
-    p.gen = today(); p.sessions.forEach(function (s) { s.eid = eidOf(s); });
+    p.gen = today(); p.sessions.concat(p.paused || []).forEach(function (s) { s.eid = eidOf(s); });
     return p;
   }
   /* Blessure ou reprise pour une semaine donnée ; la reprise dure E.REPRISE_WEEKS semaines puis le plan normal reprend. */
@@ -166,7 +177,7 @@
     if (!S.plans[ws]) {
       var np = buildPlan(ws);
       /* Premier plan ouvert en cours de semaine : il commence aujourd'hui, les jours passés restent ce que tu as fait. */
-      if (t > ws) { np.sessions = np.sessions.filter(function (s) { return s.date >= t; }); np.partial = true; }
+      if (t > ws) { np.sessions = np.sessions.filter(function (s) { return s.date >= t; }); if (np.paused) np.paused = np.paused.filter(function (s) { return s.date >= t; }); np.partial = true; }
       S.plans[ws] = np; ch = true;
     }
     var nx = addDays(ws, 7);
@@ -174,6 +185,19 @@
     if (ch) save();
     return ch;
   }
+  /* Repos et vacances : appliqués aux plans déjà enregistrés sans les recalculer (le reste de la semaine ne bouge pas). */
+  function applyPeriodsAll() {
+    var t = today(), ws0 = mondayOf(t), o = { today: t, css: zones().css || 120, sports: S.train.sports }, ch = [];
+    Object.keys(S.plans).forEach(function (w) {
+      if (w < addDays(ws0, -7)) return;
+      var p = S.plans[w], drop = E.applyPeriods(p, S.train.periods, o);
+      p.sessions.forEach(function (s) { if (!s.eid) s.eid = eidOf(s); });
+      if (drop.length) p.orphans = (p.orphans || []).concat(drop);
+      if (w >= ws0) ch.push(w);
+    });
+    previews = {}; save(); render(); ch.forEach(autoPush);
+  }
+  function periodsIn(ws) { var e = addDays(ws, 6); return S.train.periods.filter(function (p) { return p.from <= e && p.to >= ws; }).sort(function (a, b) { return a.from < b.from ? -1 : 1; }); }
   var previews = {};
   function weekPlan(ws) {
     if (S.plans[ws]) return S.plans[ws];
@@ -198,6 +222,9 @@
       });
       np.orphans = orphans;
       np.base = old.base; np.runBase = old.runBase;
+      /* Séances mises de côté (repos, vacances) : celles d'avant aujourd'hui viennent de l'ancien plan. */
+      var pz = (old.paused || []).filter(function (s) { return s.date < t; }).concat((np.paused || []).filter(function (s) { return s.date >= t && !keep.some(function (k) { return k.eid === s.eid; }); }));
+      if (pz.length) np.paused = pz; else delete np.paused;
     }
     S.plans[ws] = np; previews = {};
     return np;
@@ -601,7 +628,7 @@
   /* ================= organisation des blocs ================= */
   var LAYOUT = {
     accueil: [["seance", "Séance du jour"], ["objectif", "Mon objectif"], ["forme", "Forme"], ["nutrition", "Nutrition du jour"], ["sorties", "Dernières sorties"], ["courses", "Courses"], ["intervals", "Intervals.icu"]],
-    entrainement: [["resume", "Ma semaine"], ["objectifs", "Mes objectifs"], ["saison", "Saison et préparation"], ["jours", "La semaine, jour par jour"], ["blessure", "Blessure et reprise"], ["montre", "Montre et compteur"], ["dispos", "Mes disponibilités"], ["methode", "Comment ton plan est construit"]]
+    entrainement: [["resume", "Ma semaine"], ["objectifs", "Mes objectifs"], ["saison", "Saison et préparation"], ["jours", "La semaine, jour par jour"], ["blessure", "Blessure et reprise"], ["repos", "Repos et vacances"], ["montre", "Montre et compteur"], ["dispos", "Mes disponibilités"], ["methode", "Comment ton plan est construit"]]
   };
   var LAYOUT_TITLE = { accueil: "Organiser l'accueil", entrainement: "Organiser le plan" };
   /* Ordre choisi ; un bloc ajouté dans une nouvelle version prend sa place par défaut. */
@@ -709,7 +736,7 @@
       var st = status(main, p), m = matches(main), doneMin = sum(m.map(function (a) { return a.dur / 60; }));
       var others = ss.filter(function (s) { return s !== main; });
       html += '<section class="hero ' + main.sport + '">' + ribbon() +
-        '<div class="row wrap">' + sportChip(main.sport) + (main.key ? '<span class="chip acc">Séance clé</span>' : '') + (main.long ? '<span class="chip acc">Sortie longue</span>' : '') + (main.reprise ? '<span class="chip acc">Reprise</span>' : '') + (main.race ? '<span class="chip acc">Jour de course</span>' : '') + (main.light ? '<span class="chip warn">Allégée</span>' : '') + (st === "done" ? '<span class="chip good">Faite</span>' : '') + '</div>' +
+        '<div class="row wrap">' + sportChip(main.sport) + (main.key ? '<span class="chip acc">Séance clé</span>' : '') + (main.long ? '<span class="chip acc">Sortie longue</span>' : '') + (main.reprise ? '<span class="chip acc">Reprise</span>' : '') + (main.period ? '<span class="chip grey">Facultative</span>' : '') + (main.race ? '<span class="chip acc">Jour de course</span>' : '') + (main.light ? '<span class="chip warn">Allégée</span>' : '') + (st === "done" ? '<span class="chip good">Faite</span>' : '') + '</div>' +
         '<div><span class="eyebrow">Aujourd\'hui</span><div class="t">' + esc(main.title) + '</div></div>' +
         '<div class="row between"><div class="d num">' + hmBig(st === "done" ? doneMin : main.dur) + '</div><div style="text-align:right"><p class="small">' + esc(main.sub) + '</p><p class="tiny muted">Charge ~' + main.load + (main.sport === "natation" && main.dist ? ' · ' + fmtM(main.dist) : '') + '</p></div></div>' +
         (st === "done" ? '<p class="small">' + m.map(function (a) { return esc(a.name) + ' · ' + hm(a.dur / 60) + distLabel(a) + ' · charge ' + Math.round(a.load); }).join("<br>") + '</p>' : '') +
@@ -718,9 +745,10 @@
     } else {
       var nx = null;
       for (var i = 1; i <= 7 && !nx; i++) nx = sessionsOn(addDays(t, i)).filter(function (s) { return !s.skip; })[0] || null;
-      var skipped = ss.filter(function (s) { return s.skip; })[0], ex = actsOn(t);
-      html += '<section class="hero">' + ribbon() + '<span class="eyebrow">Aujourd\'hui</span><div class="t">' + (skipped ? 'Séance sautée' : 'Repos') + '</div>' +
-        (ex.length ? '<p class="small">Fait : ' + ex.map(function (a) { return esc(a.name) + ' (' + hm(a.dur / 60) + ')'; }).join(", ") + '</p>' : '<p class="small muted">' + (skipped ? 'Pas de souci : la suite du plan s\'adapte à ce que tu fais vraiment.' : 'La récupération fait partie de l\'entraînement : c\'est là que tu progresses.') + '</p>') +
+      var skipped = ss.filter(function (s) { return s.skip; })[0], ex = actsOn(t), per = E.periodOn(S.train.periods, t);
+      html += '<section class="hero">' + ribbon() + '<span class="eyebrow">Aujourd\'hui</span><div class="t">' + (skipped ? 'Séance sautée' : per ? E.PERIOD_LABEL[per.kind] : 'Repos') + '</div>' +
+        (per && !skipped ? '<p class="small">' + (per.kind === "vacances" ? 'Profite. ' : '') + 'Pause jusqu\'au ' + esc(dShort(per.to)) + ', puis le plan reprend là où il en est.</p>' : '') +
+        (ex.length ? '<p class="small">Fait : ' + ex.map(function (a) { return esc(a.name) + ' (' + hm(a.dur / 60) + ')'; }).join(", ") + '</p>' : per && !skipped ? '' : '<p class="small muted">' + (skipped ? 'Pas de souci : la suite du plan s\'adapte à ce que tu fais vraiment.' : 'La récupération fait partie de l\'entraînement : c\'est là que tu progresses.') + '</p>') +
         (nx ? '<p class="small">Prochaine séance : <b>' + DAYS_LONG[dow(nx.date)].toLowerCase() + '</b> · ' + esc(nx.title) + ' · ' + hm(nx.dur) + '</p>' : '') +
         (skipped ? '<button class="btn" data-act="unskip" data-date="' + t + '">Remettre la séance</button>' : '') + '</section>';
     }
@@ -943,6 +971,44 @@
     return '<div class="padel-row"><span class="grow"><span class="nm">Padel cette semaine</span><span class="tiny muted">' + (pd ? DAYS_LONG[pd.day] + ' · ' + hm(pd.dur) + ' · le plan s\'adapte autour' + (p.phase === "affutage" ? '. Affûtage : joue tranquille.' : '') : 'Une partie en plus, le plan s\'adapte autour') + '</span></span>' +
       '<button class="btn" data-act="padel" data-w="' + ws + '">' + (pd ? 'Modifier' : 'Ajouter') + '</button></div>';
   }
+  /* --- repos et vacances --- */
+  function periodSheet(id) {
+    var t = today(), cur = id ? S.train.periods.filter(function (z) { return z.id === id; })[0] : null;
+    var d = cur ? { kind: cur.kind, from: cur.from, to: cur.to, sports: JSON.parse(JSON.stringify(cur.sports || {})) } : { kind: "vacances", from: t, to: addDays(t, 6), sports: {} };
+    function html(err) {
+      return '<h2>' + (cur ? 'Modifier la période' : 'Repos ou vacances') + '</h2>' +
+        '<div class="seg acc" role="group" aria-label="Type"><button type="button" data-pk="repos" aria-pressed="' + (d.kind === "repos") + '">Repos</button><button type="button" data-pk="vacances" aria-pressed="' + (d.kind === "vacances") + '">Vacances</button></div>' +
+        '<p class="small muted">' + (d.kind === "repos" ? 'Aucune séance ces jours-là. Le plan reprend ensuite normalement.' : 'Aucune séance prévue. Si tu veux garder un peu de sport, coche-le : une séance facile un jour sur deux, sans obligation.') + '</p>' +
+        '<div class="two"><div class="field"><label for="pe-from">Du</label><input id="pe-from" type="date" value="' + esc(d.from || "") + '"></div><div class="field"><label for="pe-to">Au (inclus)</label><input id="pe-to" type="date" value="' + esc(d.to || "") + '"></div></div>' +
+        (d.kind === "vacances" ? '<div class="field"><span class="lab">Garder un peu de sport (facultatif)</span><div class="chips">' + E.SPORTS.filter(function (x) { return S.train.sports[x]; }).map(function (x) { return '<button type="button" class="chipbtn" data-ps="' + x + '" aria-pressed="' + !!d.sports[x] + '">' + SPORT[x] + '</button>'; }).join("") + '</div></div>' : '') +
+        '<p class="err" id="pe-err"' + (err ? '' : ' hidden') + '>' + esc(err || "") + '</p>' +
+        '<button class="btn primary block" id="pe-save">' + (cur ? 'Enregistrer' : 'Ajouter') + '</button>' +
+        (cur ? '<button class="btn danger block" id="pe-del">Supprimer la période</button>' : '') + '<button class="btn block" data-sheet="close">Annuler</button>';
+    }
+    function done(msg) { closeSheet(); applyPeriodsAll(); toast(msg); }
+    sheet(html(), function (root) {
+      var sh = root.querySelector(".sheet");
+      function redraw(err) { sh.innerHTML = '<div class="grab"></div>' + html(err); }
+      sh.addEventListener("change", function (e) { if (e.target.id === "pe-from") { d.from = e.target.value || null; if (d.from && (!d.to || d.to < d.from)) { d.to = d.from; redraw(); } } if (e.target.id === "pe-to") d.to = e.target.value || null; });
+      sh.addEventListener("click", function (e) {
+        var b;
+        if ((b = e.target.closest("[data-pk]"))) { d.kind = b.dataset.pk; redraw(); }
+        else if ((b = e.target.closest("[data-ps]"))) { var k = b.dataset.ps; d.sports[k] = !d.sports[k]; b.setAttribute("aria-pressed", String(!!d.sports[k])); }
+        else if (e.target.closest("#pe-save")) {
+          if (!d.from || !d.to) { redraw("Choisis une date de début et de fin."); return; }
+          if (d.to < d.from) { redraw("La fin doit être après le début."); return; }
+          var clash = S.train.periods.filter(function (z) { return z !== cur && z.from <= d.to && z.to >= d.from; })[0];
+          if (clash) { redraw("Ces dates chevauchent une autre période (" + E.PERIOD_LABEL[clash.kind].toLowerCase() + " du " + dShort(clash.from) + " au " + dShort(clash.to) + ") : modifie plutôt celle-là."); return; }
+          var z = cur || { id: "p" + Date.now().toString(36) };
+          z.kind = d.kind; z.from = d.from; z.to = d.to;
+          z.sports = d.kind === "vacances" ? E.SPORTS.reduce(function (o, x) { if (d.sports[x]) o[x] = true; return o; }, {}) : {};
+          if (!cur) S.train.periods.push(z);
+          done(E.PERIOD_LABEL[z.kind] + " enregistré" + (z.kind === "vacances" ? "es" : "") + " : le plan reprend le " + short(addDays(z.to, 1)));
+        }
+        else if (e.target.closest("#pe-del")) { S.train.periods = S.train.periods.filter(function (z) { return z !== cur; }); done("Période supprimée : les séances reviennent"); }
+      });
+    });
+  }
   function padelSheet(ws) {
     var t = today(), cur = (S.train.padel || {})[ws];
     var okDays = [0, 1, 2, 3, 4, 5, 6].filter(function (i) { return addDays(ws, i) >= t; });
@@ -1021,12 +1087,22 @@
       title = p.rec ? 'Récupération' : th.label;
       goal = p.rec ? 'Volume réduit de 30 % : ton corps assimile les 3 semaines de travail. Garde la régularité, sans forcer.' : th.goal;
     }
+    var PZ = periodsIn(ws);
+    if (PZ.length) {
+      var pz0 = PZ[0], back = addDays(PZ[PZ.length - 1].to, 1);
+      chips += '<span class="chip grey">' + E.PERIOD_LABEL[pz0.kind] + '</span>';
+      if (p.offDays === 7) {
+        title = E.PERIOD_LABEL[pz0.kind]; trackHTML = '';
+        goal = (pz0.kind === "vacances" ? 'Profite. ' : '') + 'Pas de séance prévue cette semaine. Le plan reprend le ' + longDate(back) + ', là où il en est, avec la même préparation pour tes objectifs.';
+      }
+    }
     html += '<section class="hero">' + ribbon() + '<div class="row wrap">' + chips + (p.preview ? '<span class="chip warn">Provisoire</span>' : '') + '</div>' +
       '<div class="t">' + esc(title) + '</div><p class="small">' + esc(goal) + '</p>' + trackHTML +
       '<div class="stats" style="margin-top:4px"><div class="stat"><span class="eyebrow">Prévu</span><span class="v">' + hm(pm).replace(" min", "<small>min</small>").replace(/ h (\d+)/, "<small>h</small>$1").replace(/ h$/, "<small>h</small>") + '</span></div><div class="stat"><span class="eyebrow">Fait</span><span class="v">' + (ws <= t ? hm(dm).replace(" min", "<small>min</small>").replace(/ h (\d+)/, "<small>h</small>$1").replace(/ h$/, "<small>h</small>") : '—') + '</span></div><div class="stat"><span class="eyebrow">Charge</span><span class="v">' + pload + '</span></div></div>' +
       (p.partial ? '<p class="tiny muted">Ton plan commence aujourd\'hui : les jours d\'avant montrent ce que tu as fait.</p>' : '') +
       (p.preview ? '<p class="tiny muted">Ce plan sera recalculé samedi avec tes dernières sorties, puis envoyé vers ta montre.</p>' : '') +
-      (p.adjusted ? '<p class="tiny muted">Semaine recalée : la précédente a été moins remplie que prévu, on ne saute pas de marche.</p>' : '') + '</section>';
+      (PZ.length && p.offDays && p.offDays < 7 ? '<p class="tiny muted">' + PZ.map(function (z) { return E.PERIOD_LABEL[z.kind] + ' du ' + dShort(z.from) + ' au ' + dShort(z.to); }).join(" · ") + ' : pas de séance ces jours-là, le reste de la semaine ne change pas.</p>' : '') +
+      (p.adjusted === "pause" ? '<p class="tiny muted">Retour de pause : la semaine repart un peu plus bas pour ne pas forcer, puis le plan reprend son cours.</p>' : p.adjusted ? '<p class="tiny muted">Semaine recalée : la précédente a été moins remplie que prévu, on ne saute pas de marche.</p>' : '') + '</section>';
 
     cut("resume");
     html += goalsCard(); cut("objectifs");
@@ -1042,7 +1118,7 @@
     for (var d = 0; d < 7; d++) {
       var date = addDays(ws, d), list = p.sessions.filter(function (s) { return s.date === date; }), ex = date <= t ? extrasOn(date) : [];
       html += '<div class="dayrow' + (date === t ? ' today' : '') + '"><div class="dl"><b>' + DAYS[d] + '</b><span>' + parseISO(date).getDate() + '</span></div><div style="display:flex;flex-direction:column;gap:6px;min-width:0">';
-      if (!list.length && !ex.length) html += '<div class="sess rest">Repos</div>';
+      if (!list.length && !ex.length) html += p.off && p.off[date] ? '<div class="sess rest pause">' + E.PERIOD_LABEL[p.off[date]] + '</div>' : '<div class="sess rest">Repos</div>';
       list.forEach(function (s) { html += sessButton(s); });
       ex.forEach(function (a) { html += '<div class="sess extra ' + a.sport + '"><span class="nm">' + esc(a.name || SPORT[a.sport]) + '</span><span class="sb">Hors plan · ' + hm(a.dur / 60) + '</span></div>'; });
       var sts = list.filter(function (s) { return !s.skip; }).map(function (s) { return status(s, p); });
@@ -1061,6 +1137,16 @@
       (im === "none" ? '<p class="small muted">En cas de blessure, passe en « Blessé » : le plan ne garde que les sports possibles. Quand tu reprends, passe en « Reprise » pour revenir progressivement.</p>' : '<p class="tiny muted">Si la douleur revient, recule d\'une semaine et parles-en à ton kiné ou ton médecin.</p>') + '</section>';
 
     cut("blessure");
+
+    /* repos et vacances */
+    var PER = S.train.periods.filter(function (z) { return z.to >= t; }).sort(function (a, b) { return a.from < b.from ? -1 : 1; });
+    html += '<section class="card"><div class="card-head"><h2>Repos et vacances</h2></div><p class="small muted">Une pause, pas une blessure : les séances de ces jours-là sont retirées, et le plan reprend ensuite là où il en est, avec la même préparation pour tes objectifs.</p>' +
+      (PER.length ? '<div class="periods">' + PER.map(function (z) {
+        var n = daysBetween(z.from, z.to) + 1, kp = E.SPORTS.filter(function (x) { return z.kind === "vacances" && z.sports && z.sports[x]; });
+        return '<button class="period-row ' + z.kind + '" data-act="period" data-id="' + esc(z.id) + '"><span class="grow"><span class="nm">' + E.PERIOD_LABEL[z.kind] + (z.from <= t ? ' <span class="chip acc">En cours</span>' : '') + '</span><span class="tiny muted">Du ' + esc(dShort(z.from)) + ' au ' + esc(dShort(z.to)) + ' · ' + n + ' jour' + (n > 1 ? 's' : '') + (kp.length ? ' · entretien ' + kp.map(function (x) { return SPORT[x].toLowerCase(); }).join(", ") : '') + '</span></span><span class="chev" aria-hidden="true">›</span></button>';
+      }).join("") + '</div>' : '') +
+      '<button class="btn block" data-act="period">Ajouter une période</button></section>';
+    cut("repos");
 
     /* envoi */
     if (!p.preview) {
@@ -1676,6 +1762,7 @@
     injury: function (b) { if (S.train.injury.mode === b.dataset.v) return; setInjury(b.dataset.v); toast(b.dataset.v === "blesse" ? "Plan adapté à ta blessure" : b.dataset.v === "reprise" ? "Reprise sur " + E.REPRISE_WEEKS + " semaines" : "Plan normal"); },
     goal: function (b) { goalSheet(b.dataset.id || null); },
     padel: function (b) { padelSheet(b.dataset.w); },
+    period: function (b) { periodSheet(b.dataset.id || null); },
     rsport: function (b) { var inj = S.train.injury, sp = inj.rsports || (inj.rsports = {}), k = b.dataset.s; sp[k] = sp[k] === false; setInjury(inj.mode); },
     injsport: function (b) { var sp = S.train.injury.sports, k = b.dataset.s; sp[k] = !sp[k]; setInjury("blesse"); },
     prio: function (b) { S.train.prio = b.dataset.v; save(); b.parentNode.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); $("replan-btn").disabled = false; },
