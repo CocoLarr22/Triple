@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   var D = window.RC_DATA, E = window.RC_ENGINE;
-  var APP_VERSION = "0.13.1", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
+  var APP_VERSION = "0.13.2", STORE_KEY = "remcox.state.v1", ICU = "https://intervals.icu/api/v1";
   var SPORT = { natation: "Natation", velo: "Vélo", course: "Course", tri: "Triathlon", padel: "Padel", autre: "Autre" };
   var DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
   var DAYS_LONG = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -33,7 +33,7 @@
   function toast(msg) { var t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 2600); }
   /* Couleurs des graphiques (mêmes valeurs que dans styles.css). */
   var C = { acc: "#4ECDC4", ink: "#F7FFF7", muted: "#A3B1AE", faint: "#707C7E", line: "#444C56", line2: "#56606B", bg: "#292F36",
-    natation: "#3D8BDB", velo: "#FFD60A", course: "#6CCB5F", padel: "#E05A7A", warn: "#F7A541", bad: "#FF7B72" };
+    natation: "#3D8BDB", velo: "#FFD60A", course: "#6CCB5F", padel: "#B026FF", warn: "#F7A541", bad: "#FF7B72" };
   var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="#292F36" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
   var CROSS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg>';
 
